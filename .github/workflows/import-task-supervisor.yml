@@ -1,0 +1,352 @@
+name: Prepare optional Task Supervisor contribution
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: task-supervisor-optional-world-branch
+  cancel-in-progress: false
+
+jobs:
+  prepare-contribution:
+    if: github.repository == 'rtmhjx/Coopanion' && github.repository_owner == 'rtmhjx' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact upstream base without fork bootstrap commits
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5, Node 24
+        with:
+          repository: YuZhou0311/Coopanion
+          ref: ff30069db35cd96ce57be6f034fc8b5057f24075
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+          persist-credentials: true
+
+      - name: Verify the sealed source and publish only the optional integration branch
+        shell: bash
+        env:
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_ATTR_NOSYSTEM: '1'
+          GIT_LITERAL_PATHSPECS: '1'
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import re
+          import stat
+          import subprocess
+          import unicodedata
+          import zipfile
+          from pathlib import Path, PurePosixPath
+          
+          REPOSITORY = 'rtmhjx/Coopanion'
+          MAX_FILES = 148
+          MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
+          MAX_EXPANDED_BYTES = 64 * 1024 * 1024
+          MAX_FILE_BYTES = 8 * 1024 * 1024
+          ARCHIVE_ROOT = 'cortico-world-task-supervisor-0.1.0-preview.1/'
+          TREES = {'src', 'vendor', 'tools', 'tests', 'lib'}
+          ROOT_FILES = {
+              'package.json', 'package-lock.json', 'pnpm-lock.yaml',
+              'tsconfig.vendor.json', 'README.md', 'README.zh-CN.md',
+              'CHANGELOG.md', 'SECURITY.md', 'BUILDING.md', 'SOURCES.md',
+              'LICENSE', 'NOTICE', 'THIRD-PARTY-LICENSES.txt',
+              '.gitignore', '.gitattributes', '.npmignore',
+              'console.js', 'styles.css', 'describe.json',
+          }
+          REQUIRED = {
+              'package.json', 'README.md', 'LICENSE', 'NOTICE',
+              'src/index.ts', 'src/world.ts', 'lib/index.js',
+              'tools/build.mjs', 'tsconfig.vendor.json',
+              'console.js', 'styles.css', 'describe.json',
+          }
+          
+          def fail(message):
+              raise RuntimeError(message)
+          
+          def verify_destination(root, parts):
+              target = root
+              for index, part in enumerate(parts):
+                  target = target / part
+                  if target.is_symlink():
+                      fail('An import destination contains a symbolic link.')
+                  if target.exists():
+                      mode = target.stat().st_mode
+                      if index < len(parts) - 1 and not stat.S_ISDIR(mode):
+                          fail('An import parent is not a directory.')
+                      if index == len(parts) - 1 and not stat.S_ISREG(mode):
+                          fail('An import file destination is not a regular file.')
+              if not target.resolve().is_relative_to(root):
+                  fail('An import destination escapes the checkout.')
+              return target
+          
+          def import_archive(archive, expected_sha256, root):
+              if not re.fullmatch(r'[0-9a-f]{64}', expected_sha256) or expected_sha256 == '0' * 64:
+                  fail('Set the final literal source ZIP SHA256 before dispatching.')
+              if archive.is_symlink() or not archive.is_file() or archive.stat().st_size > MAX_ARCHIVE_BYTES:
+                  fail('The fixed source ZIP is unavailable or exceeds its size limit.')
+              digest = hashlib.sha256()
+              with archive.open('rb') as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b''):
+                      digest.update(block)
+              if digest.hexdigest() != expected_sha256:
+                  fail('The source ZIP does not match the sealed SHA256.')
+          
+              with zipfile.ZipFile(archive) as package:
+                  entries = package.infolist()
+                  if len(entries) > 1024:
+                      fail('The source ZIP contains too many archive entries.')
+                  files = []
+                  names = set()
+                  spellings = {}
+                  all_entries = set()
+                  total = 0
+                  members = set()
+                  for entry in entries:
+                      if entry.orig_filename != entry.filename:
+                          fail('The source ZIP contains a truncated member name.')
+                      if entry.filename in members:
+                          fail('The source ZIP contains a duplicate member.')
+                      members.add(entry.filename)
+                      kind = stat.S_IFMT(entry.external_attr >> 16)
+                      allowed_kinds = {0, stat.S_IFDIR} if entry.is_dir() else {0, stat.S_IFREG}
+                      if kind not in allowed_kinds or entry.flag_bits & 1:
+                          fail('Links, special files and encrypted ZIP entries are forbidden.')
+                      if entry.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
+                          fail('The source ZIP uses an unsupported compression method.')
+                      if not entry.filename.startswith(ARCHIVE_ROOT):
+                          fail('The source ZIP does not use the fixed enclosing directory.')
+                      member = entry.filename[len(ARCHIVE_ROOT):]
+                      if not member and entry.is_dir():
+                          continue
+                      raw = member[:-1] if entry.is_dir() else member
+                      if not raw or chr(92) in raw or raw.startswith('/') or ':' in raw:
+                          fail('The source ZIP contains an invalid or absolute member path.')
+                      if unicodedata.normalize('NFC', raw) != raw or any(unicodedata.category(c) in {'Cc', 'Cf'} for c in raw):
+                          fail('The source ZIP contains a noncanonical member path.')
+                      parts = raw.split('/')
+                      if any(part in {'', '.', '..'} or part.casefold() == '.git' for part in parts):
+                          fail('The source ZIP contains a traversal or Git metadata path.')
+                      path = PurePosixPath(raw)
+                      if str(path) != raw or raw in all_entries:
+                          fail('The source ZIP contains a duplicate or noncanonical path.')
+                      all_entries.add(raw)
+                      for length in range(1, len(parts) + 1):
+                          spelling = '/'.join(parts[:length])
+                          previous = spellings.setdefault(spelling.casefold(), spelling)
+                          if previous != spelling:
+                              fail('The source ZIP contains paths that collide by case.')
+                      if parts[0] not in TREES and (entry.is_dir() or len(parts) != 1 or raw not in ROOT_FILES):
+                          fail('The source ZIP contains a path outside the fixed source allowlist.')
+                      if entry.is_dir():
+                          continue
+                      if not 0 <= entry.file_size <= MAX_FILE_BYTES:
+                          fail('A source file exceeds its expanded size limit.')
+                      total += entry.file_size
+                      if total > MAX_EXPANDED_BYTES:
+                          fail('The source ZIP exceeds its expanded size limit.')
+                      names.add(raw)
+                      files.append((raw, parts, entry))
+                  if len(files) != MAX_FILES or not REQUIRED.issubset(names):
+                      fail('The ZIP file count or required source set is invalid.')
+                  if any(not any(name.startswith(tree + '/') for name in names) for tree in TREES):
+                      fail('A required source tree is absent.')
+                  for raw, parts, _ in files:
+                      if any('/'.join(parts[:i]) in names for i in range(1, len(parts))):
+                          fail('A source file is also used as a directory.')
+                      verify_destination(root, parts)
+          
+                  # All paths are validated before writing. No ZIP extractall(),
+                  # package manager, build, test, source import or source script runs.
+                  for raw, parts, entry in files:
+                      target = verify_destination(root, parts)
+                      target.parent.mkdir(parents=True, exist_ok=True)
+                      content = package.read(entry)
+                      if len(content) != entry.file_size:
+                          fail('A ZIP member has an unexpected expanded length.')
+                      with target.open('wb') as output:
+                          output.write(content)
+                      target.chmod(0o644)
+              return sorted(names)
+          
+          
+          import urllib.request
+          
+          INTEGRATION_GUIDE = r'''# Optional Task Supervisor World for Coopanion
+          
+          This directory contains the complete source and built runtime of **cortico-world-task-supervisor 0.1.0-preview.1**, an optional World API 6 extension. It brings DSH conversation control, scoped Codex monitoring, scoped DSH external-memory tools, an important-event queue, and an owner-only QQ task channel into **one World** with a setup page.
+          
+          The integration is outside the application's workspaces: the [pinned workspace list](https://github.com/YuZhou0311/Coopanion/blob/ff30069db35cd96ce57be6f034fc8b5057f24075/pnpm-workspace.yaml) contains only `packages/*`. The integrations directory is outside that glob. This contribution does not change Coopanion's application code, Cortico submodule, root dependencies or lockfile, packaged application, default Worlds, or startup behavior. Installing this source directory is an explicit user choice.
+          
+          ## Provenance
+          
+          - Canonical project: [rtmhjx/cortico-world-task-supervisor](https://github.com/rtmhjx/cortico-world-task-supervisor).
+          - Reviewed source archive: [immutable publication commit](https://github.com/rtmhjx/cortico-world-task-supervisor/blob/15007151a9aad36bcc5da67c154be1367420366c/cortico-world-task-supervisor-0.1.0-preview.1-source.zip).
+          - Source ZIP SHA256: **3bb54b6543a6fe23bb46790851a5dfd8894f2fb9b62481808ffe2bf141b91395**.
+          - Source package: exactly 148 files, preserved under this directory; this guide is the only additional integration file.
+          - Fork contribution base: YuZhou0311/Coopanion main at **ff30069db35cd96ce57be6f034fc8b5057f24075** (Coopanion 0.2.4).
+          - Cortico submodule at that base: **087289dfcdf262a771c573d16dbaf2392ce6764b**, version **0.2.3**, World API **6**. The submodule is preserved.
+          - Licensing and upstream component attribution remain in [LICENSE](LICENSE), [NOTICE](NOTICE), [THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt), and [SOURCES.md](SOURCES.md).
+          
+          ## Install through the existing extension UI
+          
+          Use a Node 24 environment for building the extension and running its separate gateway installer. From this optional integration directory, explicitly run:
+          
+              npm install
+              npm run build
+          
+          In Coopanion, open **Advanced mode → Extensions** and use the existing **local-directory installer** to select this directory. Restart the process when requested, enable **Task Supervisor** in **World Overview**, and open its page. Once the preview package is available from the npm registry used by your host, the same Extensions page can install the package by name: **cortico-world-task-supervisor**.
+          
+          This source contribution does not publish an npm package or make an unpublished package appear in the catalog. It does not install or enable itself. The three older bridge Worlds are bundled as implementation modules and must not be installed separately for this integration.
+          
+          ## Configure in the World
+          
+          1. **Connect services:** enter your own QQ number, select a QQ transport, and supply its loopback endpoint, bot account and credential through the setup page. Native SnowLuma mode uses the included native add-on helper; it is not an API guaranteed by stock SnowLuma. OneBot v11 is an optional transport. Advanced trusted-metadata mode reuses an already compatible QQ World instead of providing a separate raw channel.
+          2. **Select scope:** choose only the DSH/Codex workspaces and conversation directories you want to expose, then add private directories to the exclusion list. Optional project-file reads, raw mirrors and external-memory writes have separate controls.
+          3. **Check connections and apply:** the setup page performs explicit connection checks and shows component-specific readiness. Save and restart when requested. Avoid having two QQ Worlds own replies for the same private conversation.
+          4. **Install the external gateway if needed:** the setup page can produce a private local installation kit. Download/run its launcher once, select the DSH home/profile, and follow the backup-and-install guide. Generated files are explicitly **not installed** until the separate DSH host is configured, restarted as required, and its authenticated health check succeeds.
+          
+          Raw QQ mode supplies the configured owner's task conversation and fixed-owner replies without requiring another QQ World. It still needs the selected underlying QQ service. DSH task control needs a separate running DSH host with the conversation gateway; installing a Coo World does not replace that host. Codex-only read monitoring can run without pretending a DSH workspace exists, while native task control remains unavailable until its required gateway/application is ready.
+          
+          Credentials remain host-managed deployment data and are never stored in this source tree or returned by the setup API. Keep services on loopback. Content read from the selected conversations can reach the configured model service; scope checks are not an operating-system sandbox for commands executed by a coding agent. See [SECURITY.md](SECURITY.md).
+          
+          ## The reporting switch
+          
+          Remote reporting and model task-access tools start **OFF**. Only a genuine private message from the configured owner whose original message begins with **#@**, or consists of **#@**, toggles the switch. Nicknames, quoted/forwarded messages, transcriptions, and later mentions of the marker do not supply this command. The web panel shows status; it does not impersonate the owner or toggle access.
+          
+          When turned ON, queued important events are injected and new completed-task or approval/problem events can be delivered. Ordinary progress steps do not become a stream of notifications. In raw mode, ordinary owner task chat is ignored while OFF. Turning OFF closes the task-access tools and prevents further task-content delivery through this World.
+          
+          The marker is not permission to submit a coding task. Draft/confirm control requires a separate fresh owner confirmation. Changing the owner or permitted scope closes the old access and establishes a new OFF queue; already submitted native operations continue under their original coding application's permissions.
+          
+          ## What was actually validated
+          
+          | Environment | Observed evidence | Limit |
+          | --- | --- | --- |
+          | This fork's Cortico 0.2.3 / API 6 at 087289df | Real isolated World assembly; five mount checks; secret storage, live/disk persistence, restart and setup invocation contracts; extension check passed. | Synthetic isolated state, without starting external services. |
+          | Official Coopanion 0.2.8 settings UI with Cortico 0.2.6 / API 6 | Real settings frontend displaying the real World setup page, backed by an isolated running Cortico WebApp. | Browser/settings integration, not full Electron application startup. |
+          | Sealed package core baseline | 282 tests: 281 passed and one Windows file-symlink permission case skipped; typecheck covered 81 source/fixture files; byte-exact rebuild verified. | Local fixture and build evidence. |
+          | Final UI-only revision | All nine UI tests passed, including the two new guidance cases. Core/bundle bytes were unchanged. | The resulting 284-test inventory was not rerun as one full suite. |
+          
+          **Full Electron startup, real QQ delivery/control, production DSH execution, and prolonged stability were not established by these checks.** The preview label remains intentional. Passing SDK checks is not evidence that a user's live QQ or coding-agent deployment is configured.
+          
+          ## Updating this optional integration
+          
+          Use the canonical project for future package development. Review a new sealed version, verify its archive checksum and component licenses, replace the 148-file package tree intentionally, and update this guide's version/base/validation record in a dedicated optional-integration PR. Do not edit the Cortico submodule or application defaults as part of a package refresh.
+          '''
+          
+          
+          UPSTREAM = 'YuZhou0311/Coopanion'
+          UPSTREAM_BASE = 'ff30069db35cd96ce57be6f034fc8b5057f24075'
+          UPSTREAM_URL = 'https://github.com/' + UPSTREAM + '.git'
+          FORK_URL = 'https://github.com/rtmhjx/Coopanion.git'
+          BRANCH = 'task-supervisor-world'
+          INTEGRATION = 'integrations/task-supervisor/'
+          SOURCE_URL = 'https://raw.githubusercontent.com/rtmhjx/cortico-world-task-supervisor/15007151a9aad36bcc5da67c154be1367420366c/cortico-world-task-supervisor-0.1.0-preview.1-source.zip'
+          SOURCE_SHA256 = '3bb54b6543a6fe23bb46790851a5dfd8894f2fb9b62481808ffe2bf141b91395'
+          SOURCE_BYTES = 1076342
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, response, code, message, headers, new_url):
+                  fail('The fixed source URL redirected; another URL is not permitted.')
+          
+          def download_archive(path):
+              if path.exists() or path.is_symlink():
+                  fail('The fixed temporary archive path already exists.')
+              request = urllib.request.Request(SOURCE_URL, headers={
+                  'User-Agent': 'reviewed-task-supervisor-source-import/1',
+                  'Accept': 'application/octet-stream',
+              })
+              opener = urllib.request.build_opener(NoRedirect())
+              # Anonymous public HTTPS only: no cookies, token headers, repository Secrets,
+              # browser credentials, additional scripts, package installation or source runs.
+              with opener.open(request, timeout=30) as response:
+                  if response.status != 200 or response.geturl() != SOURCE_URL:
+                      fail('The fixed public archive response was not accepted.')
+                  length = 0
+                  with path.open('xb') as output:
+                      while block := response.read(1024 * 1024):
+                          length += len(block)
+                          if length > SOURCE_BYTES:
+                              fail('The public archive exceeds the sealed length.')
+                          output.write(block)
+              if length != SOURCE_BYTES:
+                  fail('The public archive length differs from the sealed source.')
+              return path
+          
+          def git(*args, capture=False):
+              return subprocess.run(
+                  ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.autocrlf=false',
+                   '-c', 'commit.gpgSign=false', *args],
+                  check=True, stdout=subprocess.PIPE if capture else None,
+              ).stdout
+          
+          def verify_integration_directory(root):
+              target = root
+              for part in ['integrations', 'task-supervisor']:
+                  target = target / part
+                  if target.is_symlink() or target.exists() and not target.is_dir():
+                      fail('The fixed integration directory has an invalid ancestor.')
+                  if not target.resolve().is_relative_to(root):
+                      fail('The integration directory escapes the checkout.')
+              if target.exists():
+                  fail('The fixed integration destination already exists at the base.')
+              return target
+          
+          def main():
+              if (os.environ.get('GITHUB_REPOSITORY') != REPOSITORY or
+                  os.environ.get('GITHUB_REPOSITORY_OWNER') != 'rtmhjx' or
+                  os.environ.get('GITHUB_REF') != 'refs/heads/main' or
+                  os.environ.get('GITHUB_EVENT_NAME') != 'workflow_dispatch'):
+                  fail('Only this fork main manual dispatch is allowed.')
+              root = Path(os.environ['GITHUB_WORKSPACE']).resolve()
+              if Path.cwd().resolve() != root:
+                  fail('The job is not running inside its fixed checkout.')
+              if git('rev-parse', 'HEAD', capture=True).decode().strip() != UPSTREAM_BASE:
+                  fail('Checkout does not match the exact upstream base.')
+              if git('status', '--porcelain', capture=True):
+                  fail('The upstream checkout must be clean before import.')
+              upstream_remote = git('remote', 'get-url', 'origin', capture=True).decode().strip()
+              if upstream_remote not in {UPSTREAM_URL, UPSTREAM_URL[:-4]}:
+                  fail('The initial checkout remote is not the fixed upstream.')
+              target = verify_integration_directory(root)
+              # Authentication remains GitHub Actions' standard scoped checkout token.
+              # The only push destination is our own fork, never the upstream repository.
+              git('remote', 'set-url', 'origin', FORK_URL)
+              if git('ls-remote', '--heads', 'origin', 'refs/heads/' + BRANCH, capture=True):
+                  fail('The contribution branch exists; review it manually, without overwrite.')
+              git('switch', '--create', BRANCH, UPSTREAM_BASE)
+              archive = download_archive(Path(os.environ['RUNNER_TEMP']).resolve() / 'task-supervisor-sealed-source.zip')
+              target.mkdir(parents=True, exist_ok=False)
+              names = import_archive(archive, SOURCE_SHA256, target.resolve())
+              guide_path = verify_destination(target.resolve(), ['COO-INTEGRATION.md'])
+              guide_path.write_text(INTEGRATION_GUIDE, encoding='utf-8', newline='\n')
+              guide_path.chmod(0o644)
+              files = sorted([INTEGRATION + name for name in names] + [INTEGRATION + 'COO-INTEGRATION.md'])
+              if len(files) != 149 or any(not name.startswith(INTEGRATION) for name in files):
+                  fail('The contribution inventory is outside the fixed integration.')
+              paths = Path(os.environ['RUNNER_TEMP']).resolve() / 'task-supervisor-fork-paths.nul'
+              paths.write_bytes(b''.join(name.encode('utf-8') + b'\0' for name in files))
+              git('--literal-pathspecs', 'add', '--force', '--pathspec-from-file=' + str(paths), '--pathspec-file-nul')
+              staged = {name.decode('utf-8') for name in git('diff', '--cached', '--name-only', '-z', capture=True).split(b'\0') if name}
+              if staged != set(files):
+                  fail('Git staged something other than the exact 149-file contribution.')
+              git('-c', 'user.name=github-actions[bot]',
+                  '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+                  'commit', '--no-verify', '--no-gpg-sign', '-m',
+                  'Add optional Task Supervisor World integration (preview)')
+              if git('rev-parse', 'HEAD^', capture=True).decode().strip() != UPSTREAM_BASE:
+                  fail('The contribution commit does not directly descend from the fixed base.')
+              changed = {name.decode('utf-8') for name in git('diff', '--name-only', '--no-renames', '-z', UPSTREAM_BASE, 'HEAD', capture=True).split(b'\0') if name}
+              if changed != set(files):
+                  fail('The contribution changes paths outside the reviewed integration.')
+              git('push', '--no-verify', 'origin', 'HEAD:refs/heads/' + BRANCH)
+              print('Prepared 148 package files and one integration guide on', BRANCH, 'in', REPOSITORY)
+          
+          if __name__ == '__main__':
+              main()
+          PY
