@@ -1,60 +1,61 @@
 # Optional Task Supervisor World for Coopanion
 
-This directory contains the complete source and built runtime of **cortico-world-task-supervisor 0.1.0-preview.1**, an optional World API 6 extension. It brings DSH conversation control, scoped Codex monitoring, scoped DSH external-memory tools, an important-event queue, and an owner-only QQ task channel into **one World** with a setup page.
+This directory contains the complete source and built runtime of **cortico-world-task-supervisor 0.1.0-preview.2**, an optional World API 6 extension. It combines scoped DSH/Codex task monitoring, approved conversation control, DSH external-memory tools, an important-event queue and the owner's QQ task channel in one World.
 
-The integration is outside the application's workspaces: the [pinned workspace list](https://github.com/YuZhou0311/Coopanion/blob/ff30069db35cd96ce57be6f034fc8b5057f24075/pnpm-workspace.yaml) contains only `packages/*`. The integrations directory is outside that glob. This contribution does not change Coopanion's application code, Cortico submodule, root dependencies or lockfile, packaged application, default Worlds, or startup behavior. Installing this source directory is an explicit user choice.
+Its setup page, in-World installation guidance and human-facing World metadata support all eleven host languages: Simplified Chinese, Traditional Chinese, English, Japanese, Korean, French, German, Latin American Spanish, Brazilian Portuguese, Italian and Russian. The separately run DSH installer retains English terminal prompts. Tool/model instructions remain English, and local paths, commands, IDs and source conversation content retain their original values.
+
+The [pinned workspace list](https://github.com/YuZhou0311/Coopanion/blob/ff30069db35cd96ce57be6f034fc8b5057f24075/pnpm-workspace.yaml) contains only packages/*. This optional integrations directory is outside that workspace glob. The contribution preserves the application source, Cortico submodule, root dependencies/lockfile, default Worlds and startup behavior.
 
 ## Provenance
 
 - Canonical project: [rtmhjx/cortico-world-task-supervisor](https://github.com/rtmhjx/cortico-world-task-supervisor).
-- Reviewed source archive: [immutable publication commit](https://github.com/rtmhjx/cortico-world-task-supervisor/blob/15007151a9aad36bcc5da67c154be1367420366c/cortico-world-task-supervisor-0.1.0-preview.1-source.zip).
-- Source ZIP SHA256: **3bb54b6543a6fe23bb46790851a5dfd8894f2fb9b62481808ffe2bf141b91395**.
-- Source package: exactly 148 files, preserved under this directory; this guide is the only additional integration file.
-- Fork contribution base: YuZhou0311/Coopanion main at **ff30069db35cd96ce57be6f034fc8b5057f24075** (Coopanion 0.2.4).
-- Cortico submodule at that base: **087289dfcdf262a771c573d16dbaf2392ce6764b**, version **0.2.3**, World API **6**. The submodule is preserved.
-- Licensing and upstream component attribution remain in [LICENSE](LICENSE), [NOTICE](NOTICE), [THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt), and [SOURCES.md](SOURCES.md).
+- Reviewed preview.2 archive: [immutable publication commit](https://github.com/rtmhjx/cortico-world-task-supervisor/blob/85492b5a9f4d388da55372fd017ea5deae40876b/cortico-world-task-supervisor-0.1.0-preview.2-source.zip).
+- Source ZIP SHA256: **a3da12dc299fc222ce8b76774928a6bfc58867af2e2d50944182c0e1fe74585a**.
+- Complete package tree: **150** files; this integration guide is one additional file.
+- Original host base: **ff30069db35cd96ce57be6f034fc8b5057f24075**, Coopanion 0.2.4.
+- Previous contribution: **b1bfbcea347472312dcd6a50e6dc29afa1adaf33**. The refresh descends directly from it; temporary workflows on the fork main do not enter the PR.
+- Pinned Cortico: **087289dfcdf262a771c573d16dbaf2392ce6764b**, version 0.2.3 / API 6, unchanged.
+- Package licensing and provenance: [LICENSE](LICENSE), [NOTICE](NOTICE), [THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt) and [SOURCES.md](SOURCES.md).
 
-## Install through the existing extension UI
+## Install and configure
 
-Use a Node 24 environment for building the extension and running its separate gateway installer. From this optional integration directory, explicitly run:
+Use Node 24 for the extension build and separate gateway installer. Build this optional package directory explicitly:
 
     npm install
     npm run build
 
-In Coopanion, open **Advanced mode → Extensions** and use the existing **local-directory installer** to select this directory. Restart the process when requested, enable **Task Supervisor** in **World Overview**, and open its page. Once the preview package is available from the npm registry used by your host, the same Extensions page can install the package by name: **cortico-world-task-supervisor**.
+Open Coopanion **Advanced mode → Extensions** and use its existing local-directory installer to select this directory. Restart when requested, enable **Task Supervisor** in **World Overview**, and open its setup page. After publication to the npm registry your host uses, the same Extensions page can install **cortico-world-task-supervisor** by package name. Copying this source directory does not publish, install or enable it.
 
-This source contribution does not publish an npm package or make an unpublished package appear in the catalog. It does not install or enable itself. The three older bridge Worlds are bundled as implementation modules and must not be installed separately for this integration.
+The setup page lets you select the owner QQ, underlying loopback QQ service, permitted DSH/Codex workspaces and conversation directories, exclusions and individual optional read/write functions. Credentials remain host-managed deployment data. Do not store credentials in the repository. Check each configured connection and follow the page's save/restart guidance.
 
-## Configure in the World
+Raw transport provides the owner task conversation and fixed-owner replies without requiring another QQ World. Native SnowLuma mode requires the included native add-on helper; it is not a stock SnowLuma API. OneBot v11 is an optional transport. Advanced trusted-metadata mode instead reuses a compatible QQ World. Avoid two reply owners for the same private conversation.
 
-1. **Connect services:** enter your own QQ number, select a QQ transport, and supply its loopback endpoint, bot account and credential through the setup page. Native SnowLuma mode uses the included native add-on helper; it is not an API guaranteed by stock SnowLuma. OneBot v11 is an optional transport. Advanced trusted-metadata mode reuses an already compatible QQ World instead of providing a separate raw channel.
-2. **Select scope:** choose only the DSH/Codex workspaces and conversation directories you want to expose, then add private directories to the exclusion list. Optional project-file reads, raw mirrors and external-memory writes have separate controls.
-3. **Check connections and apply:** the setup page performs explicit connection checks and shows component-specific readiness. Save and restart when requested. Avoid having two QQ Worlds own replies for the same private conversation.
-4. **Install the external gateway if needed:** the setup page can produce a private local installation kit. Download/run its launcher once, select the DSH home/profile, and follow the backup-and-install guide. Generated files are explicitly **not installed** until the separate DSH host is configured, restarted as required, and its authenticated health check succeeds.
+DSH control requires a separate running DSH host with the conversation gateway. The setup page generates a private local installation kit and launcher; generating it is not installation. Run it locally, select the DSH home/profile, confirm the installation, restart DSH as required and check authenticated health. Codex-only read monitoring does not require a fictitious DSH workspace, but native control remains unavailable until its required gateway/application is ready.
 
-Raw QQ mode supplies the configured owner's task conversation and fixed-owner replies without requiring another QQ World. It still needs the selected underlying QQ service. DSH task control needs a separate running DSH host with the conversation gateway; installing a Coo World does not replace that host. Codex-only read monitoring can run without pretending a DSH workspace exists, while native task control remains unavailable until its required gateway/application is ready.
+## Reporting and authorization
 
-Credentials remain host-managed deployment data and are never stored in this source tree or returned by the setup API. Keep services on loopback. Content read from the selected conversations can reach the configured model service; scope checks are not an operating-system sandbox for commands executed by a coding agent. See [SECURITY.md](SECURITY.md).
+Reporting and model task-access tools default **OFF**. Only the configured owner's genuine private message beginning with **#@**, or consisting of that marker, toggles access. Nicknames, quotes, forwards, transcriptions and later mentions of the marker do not provide a switch command. The setup panel displays status rather than toggling access.
 
-## The reporting switch
+ON injects queued important events and allows completion/approval/problem reports. Ordinary progress does not become a notification stream. Raw-mode ordinary owner chat is ignored while OFF, and task-content reads/delivery through this World remain closed. The switch is not task confirmation: submission still needs a separate fresh owner confirmation.
 
-Remote reporting and model task-access tools start **OFF**. Only a genuine private message from the configured owner whose original message begins with **#@**, or consists of **#@**, toggles the switch. Nicknames, quoted/forwarded messages, transcriptions, and later mentions of the marker do not supply this command. The web panel shows status; it does not impersonate the owner or toggle access.
+Changing owner or permitted scope establishes a new OFF queue and closes the previous access. Already submitted native operations continue in their coding application. Scoped reads are not an OS sandbox for submitted commands, and selected conversation content can reach the configured model service. See [SECURITY.md](SECURITY.md).
 
-When turned ON, queued important events are injected and new completed-task or approval/problem events can be delivered. Ordinary progress steps do not become a stream of notifications. In raw mode, ordinary owner task chat is ignored while OFF. Turning OFF closes the task-access tools and prevents further task-content delivery through this World.
+## Validation evidence
 
-The marker is not permission to submit a coding task. Draft/confirm control requires a separate fresh owner confirmation. Changing the owner or permitted scope closes the old access and establishes a new OFF queue; already submitted native operations continue under their original coding application's permissions.
-
-## What was actually validated
-
-| Environment | Observed evidence | Limit |
+| Check | Observed evidence | Boundary |
 | --- | --- | --- |
-| This fork's Cortico 0.2.3 / API 6 at 087289df | Real isolated World assembly; five mount checks; secret storage, live/disk persistence, restart and setup invocation contracts; extension check passed. | Synthetic isolated state, without starting external services. |
-| Official Coopanion 0.2.8 settings UI with Cortico 0.2.6 / API 6 | Real settings frontend displaying the real World setup page, backed by an isolated running Cortico WebApp. | Browser/settings integration, not full Electron application startup. |
-| Sealed package core baseline | 282 tests: 281 passed and one Windows file-symlink permission case skipped; typecheck covered 81 source/fixture files; byte-exact rebuild verified. | Local fixture and build evidence. |
-| Final UI-only revision | All nine UI tests passed, including the two new guidance cases. Core/bundle bytes were unchanged. | The resulting 284-test inventory was not rerun as one full suite. |
+| Preview.2 complete extension suite | **298 tests: 297 passed, zero failed, one skipped**. Includes all 22 UI tests, a real World metadata check across all eleven language strings and seven DSH prepared-session cases. | The skip is unavailable Windows file-symlink permission; DSH persistence is synthetic/in-memory. |
+| Two actual SDK source typechecks | Both Cortico 0.2.6 and the fork's 0.2.3 passed, each covering 82 source/fixture seeds. | Typechecking is distinct from execution and live deployment. |
+| Two actual SDK isolated integration probes and upstream extension-check | Real World assembly, synthetic secret/persistence/restart contracts, string-language metadata, five dry-mount checks and the upstream extension checker passed for both SDKs. | The checker used its actual SDK's public builtin dependency graph; no real Minecraft/QQ/DSH service was started. |
+| Target-fork host plus sealed preview.2 optional integration | All five requested commands passed: test 285 passed/one filesystem-case skip, test:worlds 158 passed, and typecheck/typecheck:web/typecheck:worlds exit 0. | Isolated working tree on previous PR head b1bfbcea, whose original host base is ff30069d; this is not a claim about the final public refresh commit. Host test configurations exclude this external integration package. |
+| Host setup frontend | Official Coopanion 0.2.8 settings frontend displayed the World against an isolated Cortico 0.2.6 WebApp. | Browser/settings integration, not full Electron startup. |
 
-**Full Electron startup, real QQ delivery/control, production DSH execution, and prolonged stability were not established by these checks.** The preview label remains intentional. Passing SDK checks is not evidence that a user's live QQ or coding-agent deployment is configured.
+Host checks used Node 24 on Windows, synthetic profile/data/temp directories, the unchanged frozen host lock and the exact locked Electron 44.4.4 only as Node for a loopback fixture. They are not the upstream Node 22 cross-platform CI matrix. Preview.2's own suite and SDK checks are separate from those host checks.
 
-## Updating this optional integration
+Validation records retain two earlier failures: the previous-head test initially lacked its documented pet-panel build prerequisite, and the preview.2 host's concurrent first run timed out while checking a nonexistent extension and hit a Windows cleanup EPERM. Only the isolated pet bundle prerequisite was built. The unchanged complete main suite then passed when rerun separately with the same test timeout and selection; host/vendor source was not patched.
 
-Use the canonical project for future package development. Review a new sealed version, verify its archive checksum and component licenses, replace the 148-file package tree intentionally, and update this guide's version/base/validation record in a dedicated optional-integration PR. Do not edit the Cortico submodule or application defaults as part of a package refresh.
+**Full Electron application startup, real QQ delivery/control, production DSH execution and prolonged stability remain unverified.** Keep this preview optional until those deployment-specific acceptance steps are completed.
+
+## Maintenance
+
+Develop future versions in the canonical project. Review each sealed source archive and checksum, preserve its complete tree and licenses, then refresh this optional integration and its guide in a dedicated PR. Do not include submodule upgrades, host dependency changes or default startup changes in a package refresh.
